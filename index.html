@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alpha Scanner — Report Formatter</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+
+  :root {
+    --navy: #0f1923;
+    --blue: #2563eb;
+    --amber: #d97706;
+    --green: #16a34a;
+    --red: #dc2626;
+    --grey: #6b7280;
+    --grey-light: #f3f4f6;
+    --border: #e5e7eb;
+    --text: #111827;
+    --text-sec: #374151;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'IBM Plex Sans', sans-serif; background: #f8fafc; color: var(--text); min-height: 100vh; }
+
+  /* ── EDITOR ── */
+  .editor-mode { padding: 24px; max-width: 900px; margin: 0 auto; }
+  .editor-header { background: var(--navy); color: white; padding: 20px 28px; border-radius: 10px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; }
+  .editor-header h1 { font-size: 18px; font-weight: 700; }
+  .editor-header p { font-size: 12px; color: #94a3b8; margin-top: 3px; }
+  .field-group { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+  .field-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--grey); margin-bottom: 10px; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  input[type="text"] { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 6px; font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; color: var(--text); background: white; outline: none; }
+  input[type="text"]:focus { border-color: var(--blue); box-shadow: 0 0 0 3px #2563eb18; }
+  textarea { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; line-height: 1.6; color: var(--text); background: white; outline: none; resize: vertical; min-height: 420px; }
+  textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px #2563eb18; }
+  .hint { font-size: 11px; color: var(--grey); margin-top: 8px; line-height: 1.5; }
+  .btn-row { display: flex; gap: 10px; margin-top: 20px; }
+  .btn { padding: 10px 22px; border-radius: 6px; font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all .15s; }
+  .btn-primary { background: var(--blue); color: white; }
+  .btn-primary:hover { background: #1d4ed8; }
+  .btn-secondary { background: white; color: var(--grey); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--grey-light); }
+  .parse-error { background: #fee2e2; border: 1px solid #fca5a5; border-radius: 6px; padding: 12px 16px; font-size: 12px; color: #b91c1c; margin-top: 12px; display: none; }
+
+  /* ── PREVIEW / PRINT ── */
+  #preview { display: none; }
+  @media print {
+    .editor-mode { display: none !important; }
+    #preview { display: block !important; }
+    body { background: white; }
+  }
+
+  /* ── REPORT PAGE ── */
+  .report-page { max-width: 820px; margin: 0 auto; padding: 48px 56px; background: white; font-family: 'IBM Plex Sans', sans-serif; }
+
+  /* Masthead */
+  .report-masthead { border-bottom: 3px solid var(--navy); padding-bottom: 18px; margin-bottom: 28px; display: flex; justify-content: space-between; align-items: flex-end; }
+  .report-masthead h1 { font-size: 26px; font-weight: 700; color: var(--navy); letter-spacing: -.5px; }
+  .report-masthead .ticker { font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: var(--blue); font-weight: 600; margin-top: 2px; }
+  .report-masthead-right { text-align: right; font-size: 11px; color: var(--grey); line-height: 1.7; }
+  .report-masthead-right strong { color: var(--text); font-size: 12px; }
+
+  /* Hero verdict */
+  .verdict-hero { background: var(--navy); border-radius: 10px; padding: 28px 32px; margin-bottom: 28px; }
+  .verdict-hero-top { display: grid; grid-template-columns: auto 1fr auto; gap: 32px; align-items: center; }
+
+  .verdict-pill-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .verdict-pill { font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 700; padding: 10px 28px; border-radius: 8px; text-transform: uppercase; white-space: nowrap; }
+  .verdict-pill.buy          { background: #15803d; color: white; }
+  .verdict-pill.strong-watch { background: #1d4ed8; color: white; }
+  .verdict-pill.wait         { background: #b45309; color: white; }
+  .verdict-pill.avoid        { background: #b91c1c; color: white; }
+  .verdict-pill.default      { background: #374151; color: white; }
+  .verdict-pill-label { font-size: 10px; color: #94a3b8; letter-spacing: .08em; text-transform: uppercase; }
+
+  .conviction-wrap { display: flex; flex-direction: column; gap: 6px; }
+  .conviction-label { font-size: 10px; color: #94a3b8; letter-spacing: .08em; text-transform: uppercase; }
+  .conviction-score { font-family: 'IBM Plex Mono', monospace; font-size: 38px; font-weight: 700; color: white; line-height: 1; }
+  .conviction-denom { font-size: 18px; color: #64748b; }
+  .conviction-bar-bg { background: #1e293b; border-radius: 99px; height: 6px; width: 130px; margin-top: 8px; }
+  .conviction-bar-fill { background: #f59e0b; border-radius: 99px; height: 6px; }
+  .conviction-note { font-size: 11px; color: #94a3b8; margin-top: 6px; font-style: italic; max-width: 180px; line-height: 1.4; }
+
+  .verdict-meta { display: flex; flex-direction: column; gap: 10px; }
+  .verdict-meta-item { display: flex; flex-direction: column; gap: 2px; }
+  .verdict-meta-lbl { font-size: 10px; color: #64748b; letter-spacing: .06em; text-transform: uppercase; }
+  .verdict-meta-val { font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #e2e8f0; font-weight: 600; }
+
+  .verdict-summary { color: #cbd5e1; font-size: 13px; line-height: 1.7; border-top: 1px solid #1e293b; padding-top: 18px; margin-top: 20px; }
+
+  /* Trade levels */
+  .trade-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 28px; }
+  .trade-card { border-radius: 8px; padding: 18px 20px; }
+  .trade-card.tp  { background: #f0fdf4; border: 1px solid #bbf7d0; }
+  .trade-card.dca { background: #eff6ff; border: 1px solid #bfdbfe; }
+  .trade-card-title { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 12px; }
+  .trade-card.tp  .trade-card-title { color: #15803d; }
+  .trade-card.dca .trade-card-title { color: #1d4ed8; }
+  .trade-row { display: flex; align-items: baseline; gap: 10px; padding: 7px 0; border-bottom: 1px solid rgba(0,0,0,.06); }
+  .trade-row:last-child { border-bottom: none; }
+  .trade-tag { font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px; white-space: nowrap; flex-shrink: 0; }
+  .trade-card.tp  .trade-tag { background: #15803d; color: white; }
+  .trade-card.dca .trade-tag { background: #1d4ed8; color: white; }
+  .trade-price { font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 700; color: var(--text); white-space: nowrap; flex-shrink: 0; }
+  .trade-note { font-size: 11px; color: var(--grey); line-height: 1.45; }
+
+  /* Case for / against */
+  .case-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 28px; }
+  .case-card { border-radius: 8px; padding: 18px 20px; }
+  .case-card.for     { background: #f0fdf4; border: 1px solid #bbf7d0; }
+  .case-card.against { background: #fef2f2; border: 1px solid #fecaca; }
+  .case-card-title { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 12px; }
+  .case-card.for     .case-card-title { color: #15803d; }
+  .case-card.against .case-card-title { color: #b91c1c; }
+  .case-card ul { padding-left: 16px; }
+  .case-card li { font-size: 12px; line-height: 1.65; color: var(--text-sec); margin-bottom: 6px; }
+
+  /* Sections */
+  .report-section { margin-bottom: 24px; page-break-inside: avoid; }
+  .report-section + .report-section { border-top: 1px solid var(--border); padding-top: 22px; }
+  .section-title { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--navy); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  .prose { font-size: 13px; line-height: 1.75; color: var(--text-sec); }
+  .prose p { margin-bottom: 10px; }
+  .prose strong { color: var(--text); font-weight: 600; }
+
+  /* Key risk */
+  .risk-box { background: #fff7ed; border: 1px solid #fed7aa; border-left: 4px solid #ea580c; border-radius: 6px; padding: 14px 18px; font-size: 13px; line-height: 1.65; color: var(--text-sec); }
+  .risk-box-label { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #9a3412; display: block; margin-bottom: 6px; }
+
+  /* If verdict changes */
+  .vc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .vc-item { border-radius: 6px; padding: 12px 14px; font-size: 12px; line-height: 1.6; color: var(--text-sec); }
+  .vc-item.up   { background: #f0fdf4; border: 1px solid #bbf7d0; }
+  .vc-item.down { background: #fef2f2; border: 1px solid #fecaca; }
+  .vc-label { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 5px; display: block; }
+  .vc-item.up   .vc-label { color: #15803d; }
+  .vc-item.down .vc-label { color: #b91c1c; }
+
+  /* Research findings */
+  .research-box { background: var(--grey-light); border-radius: 6px; padding: 16px 18px; font-size: 12px; color: var(--grey); line-height: 1.7; }
+  .research-label { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-sec); display: block; margin-bottom: 8px; }
+  .research-box p { margin-bottom: 8px; color: #4b5563; }
+  .research-box p:last-child { margin-bottom: 0; }
+
+  /* Footer */
+  .report-footer { margin-top: 36px; padding-top: 14px; border-top: 2px solid var(--navy); display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: var(--grey); }
+  .report-footer strong { color: var(--navy); }
+  .disclaimer { margin-top: 12px; font-size: 10px; color: var(--grey); font-style: italic; text-align: center; padding: 10px; background: var(--grey-light); border-radius: 4px; }
+
+  /* Cover note */
+  .cover-note { background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #d97706; border-radius: 6px; padding: 14px 18px; margin-bottom: 24px; font-size: 13px; color: var(--text-sec); line-height: 1.6; }
+  .cover-note strong { color: #92400e; font-size: 10px; letter-spacing: .05em; text-transform: uppercase; display: block; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<!-- ── EDITOR ── -->
+<div class="editor-mode" id="editor">
+  <div class="editor-header">
+    <div>
+      <h1>📋 Alpha Scanner — Report Formatter</h1>
+      <p>Paste the Stage 3 output below and hit Generate. The formatter does the rest.</p>
+    </div>
+    <div style="font-size:11px;color:#64748b;text-align:right">For Pre's review<br>Confidential</div>
+  </div>
+
+  <div class="field-group">
+    <div class="field-label">Optional cover note</div>
+    <input type="text" id="notes" placeholder="e.g. Came up in yesterday's scan — sending for Pre's review. Leave blank if not needed.">
+  </div>
+
+  <div class="field-group">
+    <div class="field-label">Stage 3 output — paste in full</div>
+    <textarea id="stage3" placeholder="Paste the complete Stage 3 output here exactly as produced. Do not edit — paste it in full and hit Generate."></textarea>
+    <p class="hint">The formatter will automatically detect and extract all sections — verdict, conviction, trade levels, case for/against, key risk, research findings, and if verdict changes.</p>
+    <div class="parse-error" id="parse-error"></div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn btn-primary" onclick="generateReport()">Generate Report →</button>
+    <button class="btn btn-secondary" onclick="document.getElementById('stage3').value='';document.getElementById('notes').value='';document.getElementById('parse-error').style.display='none'">Clear</button>
+  </div>
+</div>
+
+<!-- ── PREVIEW ── -->
+<div id="preview">
+  <div class="report-page" id="report-output"></div>
+</div>
+
+<script>
+function esc(t){ return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── PARSER ──────────────────────────────────────────────────────────────────
+function parseStage3(raw){
+  const text = raw.trim();
+  const out = {};
+  // Strip markdown bold markers first — everything else runs against cleaned
+  const cleaned = text.replace(/\*\*([^*]+)\*\*/g, '$1');
+
+  // STOCK line — always first (run against cleaned to handle **bold** wrapping)
+  const stockM = cleaned.match(/^STOCK:\s*(.+?)(?:\n|$)/m);
+  if(stockM){
+    const parts = stockM[1].split('|').map(s=>s.trim());
+    // ticker is first segment, strip any leading "STOCK:" just in case
+    out.ticker   = (parts[0]||'').replace(/^STOCK:\s*/i,'').trim();
+    // company is second segment — strip any trailing RSI/Signal/Category fragments
+    out.company  = (parts[1]||'').replace(/RSI:.*$/i,'').trim();
+    const rsiM   = stockM[1].match(/RSI:\s*([\d.]+)/i);
+    out.rsi      = rsiM ? rsiM[1] : '';
+    const priceM = stockM[1].match(/Price:\s*(\$[\d,.]+)/i);
+    out.price    = priceM ? priceM[1] : '';
+    const sigM   = stockM[1].match(/Signal:\s*([^|]+)/i);
+    out.signal   = sigM ? sigM[1].trim() : '';
+    const catM   = stockM[1].match(/Category:\s*([^|]+)/i);
+    out.category = catM ? catM[1].trim() : '';
+  }
+
+  // SUGGESTED TITLE
+  const titleM = cleaned.match(/SUGGESTED TITLE:\s*(.+?)(?:\n|$)/i);
+  out.title = titleM ? titleM[1].trim() : '';
+
+  // Date from title if present e.g. "WLK — WAIT — 3/10 — June 2026"
+  const dateM = out.title.match(/—\s*([A-Za-z]+ \d{4})\s*$/);
+  out.date = dateM ? dateM[1] : new Date().toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+
+  // VERDICT — handle plain and **bold** formatting
+  const verdictM = cleaned.match(/^VERDICT:\s*(.+?)\s*(?:\n|$)/im);
+  out.verdict = verdictM ? verdictM[1].trim() : '';
+
+  // CONVICTION — handle plain and **bold** formatting
+  const convM = cleaned.match(/^CONVICTION:\s*(\d+)\s*(?:\/10)?\s*[—–-]\s*(.+?)\s*(?:\n|$)/im);
+  out.convictionNum  = convM ? parseInt(convM[1]) : 0;
+  out.convictionNote = convM ? convM[2].trim() : '';
+
+  // Summary paragraph — between conviction line and TRADE LEVELS
+  // Strip divider lines and find the first substantial paragraph
+  const afterConviction = cleaned.replace(/^[\s\S]*?CONVICTION:[^\n]*\n/im, '');
+  // Remove leading dividers/blank lines to get to the actual summary text
+  const summaryRaw = afterConviction.replace(/^[-─\s*]+\n*/,'').trim();
+  const summaryBlock = summaryRaw.split(/\n[-─]{3,}\n|\n\n(?:TRADE LEVELS|TAKE PROFIT)/i)[0];
+  out.summary = summaryBlock.replace(/^[-─*\s]+$/gm,'').trim();
+
+  // Helper: safely extract text between two section headings
+  function extractBetween(heading1, heading2){
+    try {
+      // Anchor heading2 alternatives to line starts to prevent mid-sentence phrase matches
+      const h2parts = heading2.split('|').map(h => '\\n' + h).join('|');
+      const re = new RegExp('(?:' + heading1 + ')[^\n]*\n([\\s\\S]*?)(?=' + h2parts + '|$)', 'i');
+      const m = cleaned.match(re);
+      return (m && m[1]) ? m[1].trim() : '';
+    } catch(e) { return ''; }
+  }
+
+  // Helper: safely extract from a heading to end of text
+  function extractFrom(heading){
+    try {
+      const re = new RegExp(heading + '[^\n]*\n([\\s\\S]*?)$', 'i');
+      const m = cleaned.match(re);
+      return (m && m[1]) ? m[1].trim() : '';
+    } catch(e) { return ''; }
+  }
+
+  // TAKE PROFIT LEVELS
+  const tpBlock = extractBetween('TAKE PROFIT LEVELS', 'STOP LOSS|DCA ZONE|THE CASE');
+  out.tpLevels = [];
+  if(tpBlock){
+    const tpRe = /TP(\d+):\s*(\$[\d,.\u2013\-\u2014]+(?:\s*[\u2013\-\u2014]\s*\$[\d,.]+)?)\s*[\u2014\u2013\-]\s*(.+?)(?=\nTP\d+:|$)/gim;
+    let tm;
+    while((tm=tpRe.exec(tpBlock))!==null){
+      out.tpLevels.push({ label:'TP'+tm[1], price:(tm[2]||'').trim(), note:(tm[3]||'').trim() });
+    }
+  }
+
+  // STOP LOSS / DCA ZONES — matches 'STOP LOSS / DCA ZONES' or standalone 'DCA ZONES'
+  const dcaBlock = extractBetween('STOP LOSS|DCA ZONES', 'THE CASE FOR|THE CASE AGAINST|KEY RISK');
+  out.dcaLevels = [];
+  if(dcaBlock){
+    // Match DCA zones — note text after each zone may span multiple lines before next zone
+    const dcaRe = /DCA Zone\s*(\d+):\s*(\$[\d,.–\-—]+(?:\s*[–\-—]\s*\$[\d,.]+)?)\s*[—–\-]\s*([\s\S]+?)(?=\nDCA Zone|\nNote:|\nSL:|\n─|\nTHE CASE|$)/gim;
+    let dm;
+    while((dm=dcaRe.exec(dcaBlock))!==null){
+      // Clean up note — strip newlines and collapse whitespace
+      const note = (dm[3]||'').replace(/\n/g,' ').replace(/\s+/g,' ').trim();
+      out.dcaLevels.push({ label:'Zone '+dm[1], price:(dm[2]||'').trim(), note });
+    }
+    // Hard SL fallback
+    if(out.dcaLevels.length===0){
+      const slM = dcaBlock.match(/^SL:\s*(\$[\d,.–\-—]+)\s*[—–\-]\s*(.+?)(?=\n|$)/im);
+      if(slM) out.dcaLevels.push({ label:'Stop Loss', price:(slM[1]||'').trim(), note:(slM[2]||'').trim() });
+    }
+  }
+
+  // THE CASE FOR
+  const caseForBlock = extractBetween('THE CASE FOR', 'THE CASE AGAINST');
+  out.caseFor = caseForBlock ? caseForBlock.split('\n').map(l=>(l||'').trim().replace(/^[•\-\*]\s*/,'')).filter(l=>l.length>3) : [];
+
+  // THE CASE AGAINST
+  const caseAgainstBlock = extractBetween('THE CASE AGAINST', 'KEY RISK');
+  out.caseAgainst = caseAgainstBlock ? caseAgainstBlock.split('\n').map(l=>(l||'').trim().replace(/^[•\-\*]\s*/,'')).filter(l=>l.length>3) : [];
+
+  // KEY RISK TO WATCH
+  const riskBlock = extractBetween('KEY RISK TO WATCH', 'RESEARCH FINDINGS|IF THE VERDICT');
+  out.keyRisk = (riskBlock||'').replace(/[-─*\s]+$/, '').trim();
+
+  // RESEARCH FINDINGS
+  const researchBlock = extractBetween('RESEARCH FINDINGS', 'IF THE VERDICT');
+  out.research = (researchBlock||'').trim();
+
+  // IF THE VERDICT CHANGES — extract to end of text
+  const ifRaw = extractFrom('IF THE VERDICT CHANGES');
+  const ifText = ifRaw.replace(/─+/g,'').replace(/This analysis is for learning purposes[^$]*/i,'').trim();
+  out.upgradeIf   = [];
+  out.downgradeIf = [];
+  out.waitIf      = [];
+  if(ifText){
+    // Split on sentence boundaries before "This moves"
+    const sentences = ifText.split(/\n+/).map(s=>(s||'').trim()).filter(s=>s.length>10);
+    for(const s of sentences){
+      if(/moves to (?:buy|strong watch)/i.test(s))  out.upgradeIf.push(s);
+      else if(/moves to avoid/i.test(s))             out.downgradeIf.push(s);
+      else if(/moves to wait/i.test(s))              out.waitIf.push(s);
+      else if(/stays at/i.test(s))                   out.waitIf.push(s);
+      else if(/^this moves/i.test(s))                out.upgradeIf.push(s);
+    }
+  }
+
+  return out;
+}
+
+// ── RENDER ───────────────────────────────────────────────────────────────────
+function verdictClass(v){
+  const vl=(v||'').toLowerCase();
+  if(vl.includes('strong watch')) return 'strong-watch';
+  if(vl.includes('buy'))   return 'buy';
+  if(vl.includes('wait'))  return 'wait';
+  if(vl.includes('avoid')) return 'avoid';
+  return 'default';
+}
+
+function generateReport(){
+  const raw   = document.getElementById('stage3').value.trim();
+  const notes = document.getElementById('notes').value.trim();
+  const errEl = document.getElementById('parse-error');
+
+  if(!raw){ errEl.textContent='Please paste the Stage 3 output before generating.'; errEl.style.display='block'; return; }
+  errEl.style.display='none';
+
+  const d = parseStage3(raw);
+
+  if(!d.verdict && !d.summary){
+    errEl.textContent='Could not detect a VERDICT or summary in the pasted text. Check that you have pasted the full Stage 3 output.';
+    errEl.style.display='block';
+    return;
+  }
+
+  const vClass = verdictClass(d.verdict);
+  const convPct = Math.round((d.convictionNum/10)*100);
+
+  const metaItems = [
+    d.signal   ? `Signal: <strong>${esc(d.signal)}</strong>`   : '',
+    d.rsi      ? `RSI: <strong>${esc(d.rsi)}</strong>`         : '',
+    d.category ? `Category: <strong>${esc(d.category)}</strong>` : '',
+  ].filter(Boolean).join(' &nbsp;·&nbsp; ');
+
+  // Cover note
+  const notesHtml = notes
+    ? `<div class="cover-note"><strong>Note</strong>${esc(notes)}</div>` : '';
+
+  // Hero
+  const heroHtml = `
+    <div class="verdict-hero">
+      <div class="verdict-hero-top">
+        <div class="verdict-pill-wrap">
+          <div class="verdict-pill ${vClass}">${esc(d.verdict||'—')}</div>
+          <div class="verdict-pill-label">Verdict</div>
+        </div>
+        <div class="conviction-wrap">
+          <div class="conviction-label">Conviction</div>
+          <div class="conviction-score">${d.convictionNum}<span class="conviction-denom">/10</span></div>
+          <div class="conviction-bar-bg"><div class="conviction-bar-fill" style="width:${convPct}%"></div></div>
+          ${d.convictionNote ? `<div class="conviction-note">${esc(d.convictionNote)}</div>` : ''}
+        </div>
+        <div class="verdict-meta">
+          ${d.price  ? `<div class="verdict-meta-item"><div class="verdict-meta-lbl">Price</div><div class="verdict-meta-val">${esc(d.price)}</div></div>` : ''}
+          ${d.rsi    ? `<div class="verdict-meta-item"><div class="verdict-meta-lbl">RSI</div><div class="verdict-meta-val">${esc(d.rsi)}</div></div>` : ''}
+          ${d.signal ? `<div class="verdict-meta-item"><div class="verdict-meta-lbl">Signal</div><div class="verdict-meta-val">${esc(d.signal)}</div></div>` : ''}
+        </div>
+      </div>
+      ${d.summary ? `<div class="verdict-summary">${esc(d.summary)}</div>` : ''}
+    </div>`;
+
+  // Trade levels
+  const tpRows = d.tpLevels.map(t=>`
+    <div class="trade-row">
+      <span class="trade-tag">${esc(t.label)}</span>
+      <span class="trade-price">${esc(t.price)}</span>
+      <span class="trade-note">${esc(t.note)}</span>
+    </div>`).join('');
+
+  const dcaRows = d.dcaLevels.map(t=>`
+    <div class="trade-row">
+      <span class="trade-tag">${esc(t.label)}</span>
+      <span class="trade-price">${esc(t.price)}</span>
+      <span class="trade-note">${esc(t.note)}</span>
+    </div>`).join('');
+
+  const tradeHtml = (tpRows||dcaRows) ? `
+    <div class="report-section">
+      <div class="section-title">Trade Levels</div>
+      <div class="trade-grid">
+        ${tpRows ? `<div class="trade-card tp"><div class="trade-card-title">📈 Take Profit Targets</div>${tpRows}</div>` : ''}
+        ${dcaRows ? `<div class="trade-card dca"><div class="trade-card-title">🔵 Stop Loss / DCA Zones</div>${dcaRows}</div>` : ''}
+      </div>
+    </div>` : '';
+
+  // Case for / against
+  const forItems  = d.caseFor.map(l=>`<li>${esc(l)}</li>`).join('');
+  const agaItems  = d.caseAgainst.map(l=>`<li>${esc(l)}</li>`).join('');
+  const caseHtml  = (forItems||agaItems) ? `
+    <div class="report-section">
+      <div class="section-title">The Case</div>
+      <div class="case-grid">
+        ${forItems  ? `<div class="case-card for"><div class="case-card-title">✅ Case For</div><ul>${forItems}</ul></div>`  : ''}
+        ${agaItems  ? `<div class="case-card against"><div class="case-card-title">⚠️ Case Against</div><ul>${agaItems}</ul></div>` : ''}
+      </div>
+    </div>` : '';
+
+  // Key risk
+  const riskHtml = d.keyRisk ? `
+    <div class="report-section">
+      <div class="section-title">Key Risk to Watch</div>
+      <div class="risk-box"><span class="risk-box-label">⚠ Primary Risk</span>${esc(d.keyRisk)}</div>
+    </div>` : '';
+
+  // If verdict changes
+  const makeVcItems = (arr, cls, lbl) =>
+    arr.map(s=>`<div class="vc-item ${cls}"><span class="vc-label">${lbl}</span>${esc(s)}</div>`).join('');
+  const vcItems = makeVcItems(d.upgradeIf,'up','↑ Upgrades') +
+                  makeVcItems(d.waitIf,'up','→ Moves to Wait') +
+                  makeVcItems(d.downgradeIf,'down','↓ Moves to Avoid');
+  const vcHtml = vcItems ? `
+    <div class="report-section">
+      <div class="section-title">If the Verdict Changes</div>
+      <div class="vc-grid">${vcItems}</div>
+    </div>` : '';
+
+  // Research findings — trimmed, grey box
+  const researchHtml = d.research ? `
+    <div class="report-section">
+      <div class="research-box">
+        <span class="research-label">Research & Verification Notes</span>
+        ${d.research.split('\n\n').filter(p=>p.trim()).map(p=>`<p>${esc(p.trim())}</p>`).join('')}
+      </div>
+    </div>` : '';
+
+  const html = `
+    <div class="report-masthead">
+      <div>
+        <h1>${esc(d.company||d.ticker||'Stock Analysis')}</h1>
+        <div class="ticker">${d.ticker ? esc(d.ticker)+' &nbsp;·&nbsp; ' : ''}Alpha Scanner Pipeline Report</div>
+      </div>
+      <div class="report-masthead-right">
+        <strong>${esc(d.date)}</strong><br>
+        ${metaItems||'Alpha Camps · Pre-Methodology'}
+      </div>
+    </div>
+    ${notesHtml}
+    ${heroHtml}
+    ${tradeHtml}
+    ${caseHtml}
+    ${riskHtml}
+    ${vcHtml}
+    ${researchHtml}
+    <div class="disclaimer">This report is produced by the Alpha Scanner analysis pipeline and applies Pre's trading methodology to the data provided. It is intended for internal review only and does not constitute financial advice.</div>
+    <div class="report-footer">
+      <div><strong>Alpha Scanner</strong> &nbsp;·&nbsp; alphacamps-scanner.netlify.app</div>
+      <div>Generated ${esc(d.date)} &nbsp;·&nbsp; Confidential</div>
+    </div>`;
+
+  document.getElementById('report-output').innerHTML = html;
+  document.getElementById('preview').style.display = 'block';
+  document.getElementById('editor').style.display  = 'none';
+
+  const bar = document.createElement('div');
+  bar.style.cssText = 'position:fixed;top:16px;right:16px;z-index:999;display:flex;gap:8px';
+  bar.innerHTML = `
+    <button onclick="backToEditor()" style="padding:8px 16px;background:#0f1923;color:white;border:none;border-radius:6px;font-family:IBM Plex Sans,sans-serif;font-size:12px;font-weight:600;cursor:pointer">← Back to editor</button>
+    <button onclick="window.print()" style="padding:8px 16px;background:#16a34a;color:white;border:none;border-radius:6px;font-family:IBM Plex Sans,sans-serif;font-size:12px;font-weight:600;cursor:pointer">🖨 Print / Save PDF</button>`;
+  bar.id = 'back-bar';
+  document.body.appendChild(bar);
+}
+
+function backToEditor(){
+  document.getElementById('preview').style.display = 'none';
+  document.getElementById('editor').style.display  = 'block';
+  const bar = document.getElementById('back-bar');
+  if(bar) bar.remove();
+}
+</script>
+</body>
+</html>
